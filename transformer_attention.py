@@ -40,11 +40,34 @@ class AttentionQKV(nn.Module):
 
         # As defined is the Attention is all you need paper: https://arxiv.org/pdf/1706.03762.pdf
         key_dim = th.tensor(keys.shape[-1],dtype=th.float32)
-        similarity =  # Compute the similarity according to the QKV formula
+        batch_size = queries.shape[0]
+        similarity = None
+        if len(queries.size())== 3:
+            similarity = th.zeros(batch_size, queries.shape[1], keys.shape[1])
+            for batch in range(batch_size):
+                similarity[batch, :, :] = th.mm(queries[batch, :,:], keys[batch, :,:].t())
+        else:
+            heads = queries.shape[1]
+            similarity = th.zeros(batch_size, heads, queries.shape[2], keys.shape[2])
+            for batch in range(batch_size):
+                for head in range(heads):
+                    similarity[batch, head, :, :] = th.mm(queries[batch, head, :,:], keys[batch, head, :,:].t())
+        similarity = (1/th.sqrt(key_dim)) * similarity # Compute the similarity according to the QKV formula
 
         masked_similarity = self.apply_mask(similarity, mask=mask) # We give you the mask to apply so that it is correct, you do not need to modify this.
-        weights =  # Turn the similarity into a normalized output. Remember that the last dim contains the features
-        output =  # Obtain the output
+        last_dim = len(masked_similarity.size()) - 1
+        weights = F.softmax(masked_similarity, dim=last_dim) # Turn the similarity into a normalized output. Remember that the last dim contains the features
+        output = None
+        if len(queries.size()) == 3:
+            output = th.zeros(batch_size, queries.shape[1], values.shape[2])
+            for batch in range(batch_size):
+                output[batch, :, :] = th.mm(weights[batch, :, :], values[batch, :, :])
+        else:
+            heads = queries.shape[1]
+            output = th.zeros(batch_size, heads, queries.shape[2], values.shape[3])
+            for batch in range(batch_size):
+                for head in range(heads):
+                    output[batch, head, :, :] = th.mm(weights[batch, head, :,:], values[batch, head, :,:])
         ####################################  END OF YOUR CODE  ##################################
 
         return output, weights
@@ -102,12 +125,11 @@ class MultiHeadProjection(nn.Module):
 
         batch_size, tensorlen = tensor.shape[0], tensor.shape[1]
         feature_size = tensor.shape[2]
-
-        new_feature_size =  # Compute what the feature size per head is.
+        new_feature_size =  feature_size // self.n_heads # Compute what the feature size per head is.
         # Reshape this projection tensor so that it has n_heads, each of new_feature_size
-        tensor = 
+        tensor = th.reshape(tensor, (batch_size, tensorlen, self.n_heads, new_feature_size))
         # Transpose the matrix so the outer-dimensions are the batch-size and the number of heads
-        tensor = 
+        tensor = tensor.permute(0, 2, 1, 3)
         return tensor
         ##########################################################################################
 
@@ -118,12 +140,12 @@ class MultiHeadProjection(nn.Module):
         # You are given the output from all the heads, and you must combine them back into 1 rank-3 matrix
 
         # Transpose back compared to the split, so that the outer dimensions are batch_size and sequence_length again
-        tensor = 
+        tensor = tensor.permute(0, 2, 1, 3)
         batch_size, tensorlen = tensor.shape[0], tensor.shape[1]
         feature_size = tensor.shape[-1]
 
-        new_feature_size =  # What is the new feature size, if we combine all the heads
-        tensor =  # Reshape the Tensor to remove the heads dimension and come back to a Rank-3 tensor
+        new_feature_size =  self.n_heads * feature_size # What is the new feature size, if we combine all the heads
+        tensor = th.reshape(tensor, (batch_size, tensorlen, new_feature_size)) # Reshape the Tensor to remove the heads dimension and come back to a Rank-3 tensor
         return tensor
         ##########################################################################################
 
