@@ -4,6 +4,7 @@ import torch as th
 from torch import nn
 from torch.nn import functional as F
 from torch.nn.utils import weight_norm
+from transformer_utils import get_device
 # from tensorflow.keras.layers import Layer
 
 from transformer_utils import ApplyAttentionMask
@@ -39,16 +40,19 @@ class AttentionQKV(nn.Module):
         # Use queries, keys and values to compute the output of the QKV attention
 
         # As defined is the Attention is all you need paper: https://arxiv.org/pdf/1706.03762.pdf
+        device = get_device()
         key_dim = th.tensor(keys.shape[-1],dtype=th.float32)
         batch_size = queries.shape[0]
         similarity = None
         if len(queries.size())== 3:
             similarity = th.zeros(batch_size, queries.shape[1], keys.shape[1])
+            similarity = similarity.to(device)
             for batch in range(batch_size):
                 similarity[batch, :, :] = th.mm(queries[batch, :,:], keys[batch, :,:].t())
         else:
             heads = queries.shape[1]
             similarity = th.zeros(batch_size, heads, queries.shape[2], keys.shape[2])
+            similarity = similarity.to(device)
             for batch in range(batch_size):
                 for head in range(heads):
                     similarity[batch, head, :, :] = th.mm(queries[batch, head, :,:], keys[batch, head, :,:].t())
@@ -60,11 +64,13 @@ class AttentionQKV(nn.Module):
         output = None
         if len(queries.size()) == 3:
             output = th.zeros(batch_size, queries.shape[1], values.shape[2])
+            output = output.to(device)
             for batch in range(batch_size):
                 output[batch, :, :] = th.mm(weights[batch, :, :], values[batch, :, :])
         else:
             heads = queries.shape[1]
             output = th.zeros(batch_size, heads, queries.shape[2], values.shape[3])
+            output = output.to(device)
             for batch in range(batch_size):
                 for head in range(heads):
                     output[batch, head, :, :] = th.mm(weights[batch, head, :,:], values[batch, head, :,:])
